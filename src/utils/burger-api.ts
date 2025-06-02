@@ -1,13 +1,24 @@
-import { setCookie, getCookie } from './cookie';
-import { TIngredient, TOrder, TOrdersData, TUser } from './types';
+import { getCookie, setCookie } from './cookie';
+import { TIngredient, TOrder, TUser } from './types';
 
 const URL = process.env.BURGER_API_URL;
 
 const checkResponse = <T>(res: Response): Promise<T> =>
-  res.ok ? res.json() : res.json().then((err) => Promise.reject(err));
+  res.ok
+    ? res.json()
+    : res.json().then((errData) => {
+        const message =
+          typeof errData === 'object' &&
+          errData !== null &&
+          typeof (errData as any).message === 'string'
+            ? (errData as any).message
+            : 'API request failed';
+        return Promise.reject(new Error(message));
+      });
 
-type TServerResponse<T> = {
+export type TServerResponse<T> = {
   success: boolean;
+  message?: string;
 } & T;
 
 type TRefreshResponse = TServerResponse<{
@@ -28,7 +39,9 @@ export const refreshToken = (): Promise<TRefreshResponse> =>
     .then((res) => checkResponse<TRefreshResponse>(res))
     .then((refreshData) => {
       if (!refreshData.success) {
-        return Promise.reject(refreshData);
+        return Promise.reject(
+          new Error(refreshData.message || 'Token refresh failed')
+        );
       }
       localStorage.setItem('refreshToken', refreshData.refreshToken);
       setCookie('accessToken', refreshData.accessToken);
@@ -44,15 +57,41 @@ export const fetchWithRefresh = async <T>(
     return await checkResponse<T>(res);
   } catch (err) {
     if ((err as { message: string }).message === 'jwt expired') {
-      const refreshData = await refreshToken();
-      if (options.headers) {
-        (options.headers as { [key: string]: string }).authorization =
-          refreshData.accessToken;
+      try {
+        const refreshData = await refreshToken();
+        if (options.headers) {
+          (options.headers as { [key: string]: string }).authorization =
+            refreshData.accessToken;
+        }
+        const res = await fetch(url, options);
+        return await checkResponse<T>(res);
+      } catch (refreshErr) {
+        if (refreshErr instanceof Error) {
+          return Promise.reject(refreshErr);
+        } else {
+          const message =
+            typeof refreshErr === 'object' &&
+            refreshErr !== null &&
+            (refreshErr as any).message
+              ? (refreshErr as any).message
+              : String(refreshErr);
+          return Promise.reject(
+            new Error(message || 'Unknown error during token refresh process')
+          );
+        }
       }
-      const res = await fetch(url, options);
-      return await checkResponse<T>(res);
     } else {
-      return Promise.reject(err);
+      if (err instanceof Error) {
+        return Promise.reject(err);
+      } else {
+        const message =
+          typeof err === 'object' && err !== null && (err as any).message
+            ? (err as any).message
+            : String(err);
+        return Promise.reject(
+          new Error(message || 'Unknown error in fetchWithRefresh')
+        );
+      }
     }
   }
 };
@@ -61,7 +100,7 @@ type TIngredientsResponse = TServerResponse<{
   data: TIngredient[];
 }>;
 
-type TFeedsResponse = TServerResponse<{
+export type TFeedsResponse = TServerResponse<{
   orders: TOrder[];
   total: number;
   totalToday: number;
@@ -76,7 +115,9 @@ export const getIngredientsApi = () =>
     .then((res) => checkResponse<TIngredientsResponse>(res))
     .then((data) => {
       if (data?.success) return data.data;
-      return Promise.reject(data);
+      return Promise.reject(
+        new Error(data.message || 'Failed to get ingredients')
+      );
     });
 
 export const getFeedsApi = () =>
@@ -84,7 +125,7 @@ export const getFeedsApi = () =>
     .then((res) => checkResponse<TFeedsResponse>(res))
     .then((data) => {
       if (data?.success) return data;
-      return Promise.reject(data);
+      return Promise.reject(new Error(data.message || 'Failed to get feeds'));
     });
 
 export const getOrdersApi = () =>
@@ -96,10 +137,10 @@ export const getOrdersApi = () =>
     } as HeadersInit
   }).then((data) => {
     if (data?.success) return data.orders;
-    return Promise.reject(data);
+    return Promise.reject(new Error(data.message || 'Failed to get orders'));
   });
 
-type TNewOrderResponse = TServerResponse<{
+export type TNewOrderResponse = TServerResponse<{
   order: TOrder;
   name: string;
 }>;
@@ -116,10 +157,10 @@ export const orderBurgerApi = (data: string[]) =>
     })
   }).then((data) => {
     if (data?.success) return data;
-    return Promise.reject(data);
+    return Promise.reject(new Error(data.message || 'Failed to create order'));
   });
 
-type TOrderResponse = TServerResponse<{
+export type TOrderResponse = TServerResponse<{
   orders: TOrder[];
 }>;
 
@@ -137,7 +178,7 @@ export type TRegisterData = {
   password: string;
 };
 
-type TAuthResponse = TServerResponse<{
+export type TAuthResponse = TServerResponse<{
   refreshToken: string;
   accessToken: string;
   user: TUser;
@@ -154,7 +195,7 @@ export const registerUserApi = (data: TRegisterData) =>
     .then((res) => checkResponse<TAuthResponse>(res))
     .then((data) => {
       if (data?.success) return data;
-      return Promise.reject(data);
+      return Promise.reject(new Error(data.message || 'Registration failed'));
     });
 
 export type TLoginData = {
@@ -173,7 +214,7 @@ export const loginUserApi = (data: TLoginData) =>
     .then((res) => checkResponse<TAuthResponse>(res))
     .then((data) => {
       if (data?.success) return data;
-      return Promise.reject(data);
+      return Promise.reject(new Error(data.message || 'Login failed'));
     });
 
 export const forgotPasswordApi = (data: { email: string }) =>
@@ -187,7 +228,9 @@ export const forgotPasswordApi = (data: { email: string }) =>
     .then((res) => checkResponse<TServerResponse<{}>>(res))
     .then((data) => {
       if (data?.success) return data;
-      return Promise.reject(data);
+      return Promise.reject(
+        new Error(data.message || 'Forgot password request failed')
+      );
     });
 
 export const resetPasswordApi = (data: { password: string; token: string }) =>
@@ -201,10 +244,10 @@ export const resetPasswordApi = (data: { password: string; token: string }) =>
     .then((res) => checkResponse<TServerResponse<{}>>(res))
     .then((data) => {
       if (data?.success) return data;
-      return Promise.reject(data);
+      return Promise.reject(new Error(data.message || 'Password reset failed'));
     });
 
-type TUserResponse = TServerResponse<{ user: TUser }>;
+export type TUserResponse = TServerResponse<{ user: TUser }>;
 
 export const getUserApi = () =>
   fetchWithRefresh<TUserResponse>(`${URL}/auth/user`, {

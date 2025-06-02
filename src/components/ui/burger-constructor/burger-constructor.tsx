@@ -8,7 +8,7 @@ import styles from './burger-constructor.module.css';
 import { BurgerConstructorUIProps } from './type';
 import { TConstructorIngredient } from '@utils-types';
 import { BurgerConstructorElement, Modal } from '@components';
-import { Preloader, OrderDetailsUI } from '@ui';
+import { OrderDetailsUI, Preloader } from '@ui';
 
 export const BurgerConstructorUI: FC<BurgerConstructorUIProps> = ({
   constructorItems,
@@ -36,7 +36,7 @@ export const BurgerConstructorUI: FC<BurgerConstructorUIProps> = ({
         Выберите булки
       </div>
     )}
-    <ul className={styles.elements}>
+    <ul className={styles.elements} data-cy='burger-constructor'>
       {constructorItems.ingredients.length > 0 ? (
         constructorItems.ingredients.map(
           (item: TConstructorIngredient, index: number) => (
@@ -84,6 +84,7 @@ export const BurgerConstructorUI: FC<BurgerConstructorUIProps> = ({
         size='large'
         children='Оформить заказ'
         onClick={onOrderClick}
+        data-cy='order-button'
       />
     </div>
 
